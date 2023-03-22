@@ -1,7 +1,13 @@
 from langchain.vectorstores import FAISS
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader,UnstructuredMarkdownLoader, UnstructuredHTMLLoader,UnstructuredPowerPointLoader, SRTLoader,Unstructured File Loader
-from langchain.embeddings import HuggingFaceHubEmbeddings
+from langchain.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader,UnstructuredMarkdownLoader, UnstructuredHTMLLoader,UnstructuredPowerPointLoader, SRTLoader,UnstructuredFileLoader
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains import VectorDBQAWithSourcesChain
+import pickle
+EMBEDDINGS = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+    )
 
 # load a pdf file and create a FAISS embedding file
 def load_file(filename):
@@ -19,20 +25,35 @@ def load_file(filename):
         elif filename.endswith('.srt'):
             return SRTLoader(filename)
         else:
-            raise ValueError("Invalid file type")
+            return UnstructuredFileLoader(filename)
     except Exception as e:
         print(f"Error: {e}")
+        
+def ingest_docs(loader, path):
+    """Get documents from web pages."""
+    raw_documents = loader.load()
+    print(raw_documents)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
+    documents = text_splitter.split_documents(raw_documents)
+    vectorstore = FAISS.from_documents(documents, EMBEDDINGS)
 
-
-loader = PyPDFLoader("example_data/layout-parser-paper.pdf")
-pages = loader.load_and_split()
-faiss_index = FAISS.from_documents(pages, OpenAIEmbeddings())
-docs = faiss_index.similarity_search("How will the community be engaged?", k=2)
-for doc in docs:
-    print(str(doc.metadata["page"]) + ":", doc.page_content)
-repo_id = "sentence-transformers/all-mpnet-base-v2"
-hf = HuggingFaceHubEmbeddings(
-    repo_id=repo_id,
-    task="feature-extraction",
-    huggingfacehub_api_token="my-api-key",
-)
+    # Save vectorstore
+    with open(path, "wb") as f:
+        pickle.dump(vectorstore, f)
+        
+if __name__ == "__main__":
+    # Continue with the rest of the code here
+    #loader=load_file('test/ruihuayanjiu.pdf')
+    #ingest_docs(loader,"test/ruihuayanjiu.pkl")
+    with open("test/ruihuayanjiu.pkl",'rb') as file:
+        db = pickle.load(file)
+    while True:
+        query = input("Enter a query (type 'exit' to quit): ")
+        if query == 'exit':
+            break
+        docs = db.similarity_search_with_score(query)
+        for doc in docs:
+            print(doc)
